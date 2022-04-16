@@ -1,0 +1,42 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model Accident {
+  id                     Int      @id @map("_id")
+  data                   DateTime
+  uf                     String
+  br                     String
+  km                     String
+  municipio              String
+  causa_acidente         String
+  tipo_acidente          String
+  classificacao_acidente String
+  fase_dia               String
+  sentido_via            String
+  condicao_metereologica String
+  tipo_pista             String
+  tracado_via            String
+  uso_solo               String
+  pessoas                Int
+  mortos                 Int
+  feridos_leves          Int
+  feridos_graves         Int
+  ilesos                 Int
+  ignorados              Int
+  feridos                Int
+  veiculos               Int
+  latitude               Float
+  longitude              Float
+  regional               String
+  delegacia              String
+  uop                    String
+}
