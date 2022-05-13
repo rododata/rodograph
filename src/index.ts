@@ -1,6 +1,7 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+import cors from 'cors';
 import express from "express";
 import { PrismaClient } from "@prisma/client";
 
@@ -12,6 +13,7 @@ const prisma = new PrismaClient({
     log: ['info', 'warn', 'error'],
 });
 
+app.use(cors());
 app.use('/graph', GraphService);
 
 prisma.$connect().then(async () => {
