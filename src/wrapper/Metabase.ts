@@ -10,29 +10,52 @@ const axios = Axios.create({
     baseURL: METABASE_API_URL,
 });
 
+type MetabaseResultMetadata = {
+    id?: number;
+    display_name: string;
+    field_ref: [string, number];
+};
+
+type MetabaseOrderedCardResponse = {
+    card: {
+        id: number;
+        name: string;
+        result_metadata: MetabaseResultMetadata[];
+    }
+};
+
 type MetabaseDashboardResponse = {
     id: number;
     name: string;
-    ordered_cards?: {
-        card: {
-            id: number;
-            name: string;
-        }
-    }[];
+    ordered_cards?: MetabaseOrderedCardResponse[];
 };
 
 export type GraphData = [string, number];
 export type GraphResult = Array<GraphData>;
 
+export type Dataset = {
+    label: string;
+};
+
 export type Card = {
     id: number;
     name: string;
+    datasets: Dataset[];
 };
 
 export type Dashboard = {
     id: number;
     name: string;
     cards: Card[];
+};
+
+const metabaseCardToCard = (card: MetabaseOrderedCardResponse['card']): Card => {
+    const { id, name } = card;
+    const datasets = card.result_metadata
+        .filter(e => e.field_ref[0] === 'field')
+        .map(({ display_name }) => ({ label: display_name }));
+
+    return { id, name, datasets };
 };
 
 export namespace Metabase {
@@ -90,7 +113,7 @@ export namespace Metabase {
             throw new Error(`Failed to fetch dashboard id '${id}'`);
 
         const cards: Card[] = data.ordered_cards?.map(e => e['card'])
-            .map(({ id, name }) => ({ id, name })) || [];
+            .map(metabaseCardToCard) || [];
 
         return {
             id: data['id'],
