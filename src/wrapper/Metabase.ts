@@ -20,6 +20,7 @@ type MetabaseOrderedCardResponse = {
     card: {
         id: number;
         name: string;
+        display: string;
         result_metadata: MetabaseResultMetadata[];
     }
 };
@@ -37,9 +38,13 @@ export type Dataset = {
     label: string;
 };
 
+const chartTypes = ['bar', 'line', 'scatter', 'bubble', 'pie', 'doughnut', 'polarArea', 'radar'] as const;
+export type ChartType = typeof chartTypes[number];
+
 export type Card = {
     id: number;
     name: string;
+    type?: ChartType;
     datasets: Dataset[];
 };
 
@@ -49,13 +54,23 @@ export type Dashboard = {
     cards: Card[];
 };
 
+const metabaseDisplayToChartType = (display: MetabaseOrderedCardResponse['card']['display']): ChartType | undefined => {
+    const _chartType = display as ChartType;
+
+    if (chartTypes.includes(_chartType))
+        return _chartType;
+
+    return undefined;
+};
+
 const metabaseCardToCard = (card: MetabaseOrderedCardResponse['card']): Card => {
-    const { id, name } = card;
+    const { id, name, display } = card;
+    const type = metabaseDisplayToChartType(display);
     const datasets = card.result_metadata
         .filter(e => e.field_ref[0] === 'field')
         .map(({ display_name }) => ({ label: display_name }));
 
-    return { id, name, datasets };
+    return { id, name, type, datasets };
 };
 
 export namespace Metabase {
