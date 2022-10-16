@@ -9,6 +9,7 @@ import { PrismaClient } from "@prisma/client";
 import { Metabase } from "./wrapper/Metabase";
 import { GraphService } from "./services/GraphService";
 import { DashboardService } from "./services/DashboardService";
+import { QueryService } from "./services/QueryService";
 
 const app = express();
 const prisma = new PrismaClient({
@@ -24,6 +25,7 @@ app.use(express.json());
 
 app.use('/dashboards', DashboardService);
 app.use('/graphs', GraphService);
+app.use('/query', QueryService);
 
 prisma.$connect().then(async () => {
     await Metabase.connect();

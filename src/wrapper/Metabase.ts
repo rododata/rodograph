@@ -12,6 +12,9 @@ const axios = Axios.create({
     validateStatus: () => true,
 });
 
+const ACCIDENTS_TABLE = 5;
+const RODODATA_DATABASE = 2;
+
 type MetabaseResultMetadata = {
     id?: number;
     display_name: string;
@@ -31,6 +34,28 @@ type MetabaseDashboardResponse = {
     id: number;
     name: string;
     ordered_cards?: MetabaseOrderedCardResponse[];
+};
+
+type MetabaseQueryMetadataField = {
+    id: number;
+    effective_type: string;
+    display_name: string;
+    dimension_options: string[];
+};
+
+type MetabaseQueryMetadataResponse = {
+    fields: MetabaseQueryMetadataField[];
+    dimension_options: []; // TODO
+};
+
+type MetabaseDatasetQueryReponse = {
+    data: {
+        cols: {
+            description?: string | null;
+            display_name: string;
+        }[];
+        rows: unknown[][];
+    };
 };
 
 export type GraphData = [string, number];
@@ -59,11 +84,19 @@ export type Dashboard = {
 
 type PossibleFilters = 'filterBy' | 'groupBy';
 
-export type FilterQuery = {
-    type: PossibleFilters;
+type Query<T extends PossibleFilters> = {
+    type: T;
     fieldId: number;
-    value?: unknown;
 };
+
+export type FilterByQuery = Query<'filterBy'> & {
+    operator?: '>' | '<' | '=';
+    value?: unknown;
+}
+
+export type GroupByQuery = Query<'groupBy'>;
+
+type QueryType = FilterByQuery | GroupByQuery;
 
 export type FilterableField = {
     type: PossibleFilters;
@@ -71,10 +104,33 @@ export type FilterableField = {
     name: string;
 };
 
+export type QueryField = {
+    id: number;
+    name: string;
+    type: string;
+    dimensions: string[];
+};
+
+export type QueryOptions = {
+    fields: QueryField[];
+    // dimensions: []; // TODO
+};
+
+export type QueryResult = {
+    data: unknown[][];
+    labels: string[];
+};
+
 type CardFilterableFields = {
     cardId: number;
     fields: FilterableField[];
 };
+
+const isFilterByQuery = (query: QueryType): query is FilterByQuery =>
+    query.type === 'filterBy';
+
+const isGroupByQuery = (query: QueryType): query is GroupByQuery =>
+    query.type === 'groupBy';
 
 const metabaseDisplayToChartType = (display: MetabaseOrderedCardResponse['card']['display']): ChartType | undefined => {
     const _chartType = display as ChartType;
@@ -98,6 +154,38 @@ const metabaseCardToCard = (card: MetabaseOrderedCardResponse['card'], filter?: 
         filters = filter.fields;
 
     return { id, name, type, datasets, filters };
+};
+
+const mapQueryField = (field: MetabaseQueryMetadataField): QueryField => ({
+    id: field.id,
+    name: field.display_name,
+    type: field.effective_type,
+    dimensions: field.dimension_options,
+});
+
+const createQueryMBQL = (queries: QueryType[] = []) => {
+    const aggregation = [];
+    const breakout = [];
+    const filter = [];
+
+    for (const query of queries) {
+        const field = ["field", query.fieldId, null];
+
+        if (isFilterByQuery(query)) {
+            filter.push(query.operator || '=', field, query.value || '');
+            continue;
+        }
+
+        if (isGroupByQuery(query)) {
+            if (!aggregation.flat().includes('count'))
+                aggregation.push(['count']);
+
+            breakout.push(field);
+            continue;
+        }
+    }
+
+    return { aggregation, breakout, filter };
 };
 
 export namespace Metabase {
@@ -137,30 +225,14 @@ export namespace Metabase {
         return data.data.rows;
     }
 
-    export async function filterCard(id: string, filters: FilterQuery[] = []): Promise<GraphResult> {
+    export async function filterCard(id: string, filters: QueryType[] = []): Promise<GraphResult> {
         let { status, data } = await axios.get(`/card/${id}`);
 
         if (status !== 200)
             throw new Error(`Failed to get card id '${id}'`);
 
         const datasetQuery = data['dataset_query'];
-        const query = Object.assign({
-            aggregation: [],
-            breakout: [],
-            filter: [],
-        }, datasetQuery['query']);
-
-        filters.forEach(({ type, fieldId, value }) => {
-            const _field = ["field", fieldId, null];
-
-            if (type === 'filterBy') {
-                query['filter'].push('=', _field, value);
-            }
-
-            if (type === 'groupBy') {
-                query['breakout'].push(_field);
-            }
-        });
+        const query = Object.assign(createQueryMBQL(filters), datasetQuery['query']);
 
         Object.assign(datasetQuery, { query });
         ({ status, data } = await axios.post('/dataset', datasetQuery));
@@ -210,5 +282,37 @@ export namespace Metabase {
             name: data['name'],
             cards,
         };
+    }
+
+    export async function getQueryOptions(): Promise<QueryOptions> {
+        const { data, status } = await axios.get<MetabaseQueryMetadataResponse>(`/table/${ACCIDENTS_TABLE}/query_metadata`);
+
+        if (status !== 200)
+            throw new Error('Failed to fetch query options');
+
+        const fields = data.fields.map(mapQueryField);
+
+        return { fields };
+    }
+
+    export async function query(filters: QueryType[] = []): Promise<QueryResult> {
+        const options = {
+            database: RODODATA_DATABASE,
+            query: {
+                'source-table': ACCIDENTS_TABLE,
+            },
+            type: 'query',
+        };
+
+        Object.assign(options.query, createQueryMBQL(filters));
+        const { data, status } = await axios.post<MetabaseDatasetQueryReponse>('/dataset', options);
+
+        if (status !== 202)
+            throw new Error('Failed to query data');
+
+        const { cols, rows } = data['data'];
+        const labels = cols.map(e => e.display_name);
+
+        return { data: rows, labels };
     }
 }
