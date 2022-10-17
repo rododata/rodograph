@@ -58,9 +58,6 @@ type MetabaseDatasetQueryReponse = {
     };
 };
 
-export type GraphData = [string, number];
-export type GraphResult = Array<GraphData>;
-
 export type Dataset = {
     label: string;
 };
@@ -156,6 +153,18 @@ const metabaseCardToCard = (card: MetabaseOrderedCardResponse['card'], filter?: 
     return { id, name, type, datasets, filters };
 };
 
+const mapQueryResponse = (response: MetabaseDatasetQueryReponse) => {
+    const { cols, rows } = response['data'];
+    const labels = cols.map(e => {
+        if (e.display_name === 'Count')
+            return 'Total';
+
+        return e.display_name;
+    });
+
+    return { data: rows, labels };
+};
+
 const mapQueryField = (field: MetabaseQueryMetadataField): QueryField => ({
     id: field.id,
     name: field.display_name,
@@ -216,31 +225,33 @@ export namespace Metabase {
         console.log('Connected to the Metabase API');
     }
 
-    export async function fetchCard(id: string): Promise<GraphResult> {
-        const { status, data } = await axios.post(`/card/${id}/query`);
+    export async function fetchCard(id: string): Promise<QueryResult> {
+        const { status, data } = await axios.post<MetabaseDatasetQueryReponse>(`/card/${id}/query`);
 
         if (status !== 202)
             throw new Error(`Failed to fetch data from card id '${id}'`);
 
-        return data.data.rows;
+        return mapQueryResponse(data);
     }
 
-    export async function filterCard(id: string, filters: QueryType[] = []): Promise<GraphResult> {
-        let { status, data } = await axios.get(`/card/${id}`);
+    export async function filterCard(id: string, filters: QueryType[] = []): Promise<QueryResult> {
+        const datasetQuery = await axios.get(`/card/${id}`)
+            .then(({ status, data }) => {
+                if (status !== 200)
+                    throw new Error(`Failed to get card id '${id}'`);
 
-        if (status !== 200)
-            throw new Error(`Failed to get card id '${id}'`);
+                return data['dataset_query'];
+            });
 
-        const datasetQuery = data['dataset_query'];
         const query = Object.assign(createQueryMBQL(filters), datasetQuery['query']);
 
         Object.assign(datasetQuery, { query });
-        ({ status, data } = await axios.post('/dataset', datasetQuery));
+        const { status, data } = await axios.post<MetabaseDatasetQueryReponse>('/dataset', datasetQuery);
 
         if (status !== 202)
             throw new Error(`Failed to fetch data from card id '${id}'`);
 
-        return data.data.rows;
+        return mapQueryResponse(data);
     }
 
     export async function getDashboards(): Promise<Dashboard[]> {
@@ -310,9 +321,6 @@ export namespace Metabase {
         if (status !== 202)
             throw new Error('Failed to query data');
 
-        const { cols, rows } = data['data'];
-        const labels = cols.map(e => e.display_name);
-
-        return { data: rows, labels };
+        return mapQueryResponse(data);
     }
 }
